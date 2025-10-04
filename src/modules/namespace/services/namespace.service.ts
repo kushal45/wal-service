@@ -27,7 +27,7 @@ export class NamespaceService {
   async getNamespace(name: string): Promise<Namespace | null> {
     try {
       const namespace = await this.namespaceRepository.findByName(name);
-      
+
       if (!namespace) {
         this.logger.warn(`Namespace not found: ${name}`);
         return null;
@@ -41,9 +41,13 @@ export class NamespaceService {
 
       return namespace;
     } catch (error) {
-      this.logger.error(`Error retrieving namespace ${name}: ${error.message}`, {
-        error: error.stack,
-      });
+      const errorAnnotated = error as Error;
+      this.logger.error(
+        `Error retrieving namespace ${name}: ${errorAnnotated.message}`,
+        {
+          error: errorAnnotated.stack,
+        },
+      );
       throw error;
     }
   }
@@ -51,9 +55,12 @@ export class NamespaceService {
   /**
    * Validate a WriteToLog request against namespace configuration
    */
-  async validateRequest(namespaceName: string, request: WriteToLogDto): Promise<void> {
+  async validateRequest(
+    namespaceName: string,
+    request: WriteToLogDto,
+  ): Promise<void> {
     const namespace = await this.getNamespace(namespaceName);
-    
+
     if (!namespace) {
       throw new NotFoundException(`Namespace '${namespaceName}' not found`);
     }
@@ -72,32 +79,48 @@ export class NamespaceService {
     }
 
     // Validate delay if specified
-    if (request.lifecycle?.delay && request.lifecycle.delay > namespace.maxDelaySeconds) {
+    if (
+      request.lifecycle?.delay &&
+      request.lifecycle.delay > namespace.maxDelaySeconds
+    ) {
       throw new ValidationError(
         `Delay ${request.lifecycle.delay}s exceeds maximum allowed delay ${namespace.maxDelaySeconds}s for namespace '${namespaceName}'`,
-        { namespaceName, delay: request.lifecycle.delay, maxDelay: namespace.maxDelaySeconds },
+        {
+          namespaceName,
+          delay: request.lifecycle.delay,
+          maxDelay: namespace.maxDelaySeconds,
+        },
       );
     }
 
     // Validate target configuration compatibility
     if (namespace.targetConfig && request.target) {
-      const targets = Array.isArray(request.target) ? request.target : [request.target];
-      
+      const targets = Array.isArray(request.target)
+        ? request.target
+        : [request.target];
+
       for (const target of targets) {
         if (target.type !== namespace.targetConfig.type) {
           throw new ValidationError(
             `Target type '${target.type}' is not compatible with namespace configuration '${namespace.targetConfig.type}'`,
-            { namespaceName, requestTargetType: target.type, namespaceTargetType: namespace.targetConfig.type },
+            {
+              namespaceName,
+              requestTargetType: target.type,
+              namespaceTargetType: namespace.targetConfig.type,
+            },
           );
         }
       }
     }
 
-    this.logger.debug(`Request validation passed for namespace: ${namespaceName}`, {
-      namespaceName,
-      messageSize,
-      delay: request.lifecycle?.delay,
-    });
+    this.logger.debug(
+      `Request validation passed for namespace: ${namespaceName}`,
+      {
+        namespaceName,
+        messageSize,
+        delay: request.lifecycle?.delay,
+      },
+    );
   }
 
   /**
@@ -110,7 +133,9 @@ export class NamespaceService {
   /**
    * Get namespaces by backend type
    */
-  async getNamespacesByBackend(backend: 'kafka' | 'sqs' | 'redis'): Promise<Namespace[]> {
+  async getNamespacesByBackend(
+    backend: 'kafka' | 'sqs' | 'redis',
+  ): Promise<Namespace[]> {
     return this.namespaceRepository.findByBackend(backend);
   }
 
@@ -124,18 +149,27 @@ export class NamespaceService {
 
     const exists = await this.namespaceRepository.exists(namespaceData.name);
     if (exists) {
-      throw new ConflictException(`Namespace '${namespaceData.name}' already exists`);
+      throw new ConflictException(
+        `Namespace '${namespaceData.name}' already exists`,
+      );
     }
 
     // Set defaults from configuration
-    const defaultMaxMessageSize = this.configService.get<number>('wal.maxMessageSize', 1048576);
-    const defaultMaxDelaySeconds = this.configService.get<number>('wal.maxDelaySeconds', 86400);
+    const defaultMaxMessageSize = this.configService.get<number>(
+      'wal.maxMessageSize',
+      1048576,
+    );
+    const defaultMaxDelaySeconds = this.configService.get<number>(
+      'wal.maxDelaySeconds',
+      86400,
+    );
 
     const namespace = await this.namespaceRepository.create({
       ...namespaceData,
       maxMessageSize: namespaceData.maxMessageSize || defaultMaxMessageSize,
       maxDelaySeconds: namespaceData.maxDelaySeconds || defaultMaxDelaySeconds,
-      enabled: namespaceData.enabled !== undefined ? namespaceData.enabled : true,
+      enabled:
+        namespaceData.enabled !== undefined ? namespaceData.enabled : true,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -151,7 +185,10 @@ export class NamespaceService {
   /**
    * Update an existing namespace
    */
-  async updateNamespace(name: string, updateData: Partial<Namespace>): Promise<Namespace> {
+  async updateNamespace(
+    name: string,
+    updateData: Partial<Namespace>,
+  ): Promise<Namespace> {
     const exists = await this.namespaceRepository.exists(name);
     if (!exists) {
       throw new NotFoundException(`Namespace '${name}' not found`);
@@ -180,7 +217,7 @@ export class NamespaceService {
     }
 
     const deleted = await this.namespaceRepository.delete(name);
-    
+
     if (deleted) {
       this.logger.log(`Deleted namespace: ${name}`);
     }

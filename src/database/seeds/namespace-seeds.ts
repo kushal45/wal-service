@@ -153,3 +153,36 @@ export async function seedNamespaces(dataSource: DataSource): Promise<void> {
     }
   }
 }
+
+// Main execution for seeding
+async function main(): Promise<void> {
+  const dataSource = new DataSource({
+    type: 'postgres',
+    host: process.env.DATABASE_HOST || 'localhost',
+    port: parseInt(process.env.DATABASE_PORT || '5432', 10),
+    username: process.env.DATABASE_USERNAME || 'postgres',
+    password: process.env.DATABASE_PASSWORD || 'password',
+    database: process.env.DATABASE_NAME || 'wal_service',
+    entities: [Namespace],
+    synchronize: false,
+    logging: true,
+  });
+
+  try {
+    await dataSource.initialize();
+    console.log('Database connected for seeding...');
+    await seedNamespaces(dataSource);
+    console.log('Seeding completed successfully!');
+  } catch (error) {
+    console.error('Error during seeding:', error);
+    process.exit(1);
+  } finally {
+    if (dataSource.isInitialized) {
+      await dataSource.destroy();
+    }
+  }
+}
+
+if (require.main === module) {
+  void main();
+}

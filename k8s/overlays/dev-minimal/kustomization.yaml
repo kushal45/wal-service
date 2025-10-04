@@ -22,6 +22,7 @@ labels:
 
 patchesStrategicMerge:
 - deployment-patch.yaml
+- configmap-patch.yaml
 
 images:
 - name: localhost:6000/wal-service

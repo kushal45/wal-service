@@ -71,16 +71,24 @@ spec:
         - name: LOG_FORMAT
           value: "pretty"
         - name: DATABASE_HOST
-          value: "postgres"
+          valueFrom:
+            configMapKeyRef:
+              name: wal-service-config
+              key: DATABASE_HOST
         - name: DATABASE_PORT
-          value: "5432"
+          valueFrom:
+            configMapKeyRef:
+              name: wal-service-config
+              key: DATABASE_PORT
         - name: DATABASE_USERNAME
           value: "postgres"
         - name: DATABASE_PASSWORD
           value: "password"
         - name: DATABASE_NAME
           value: "wal_service"
-        - name: SKIP_DB
+        - name: DATABASE_SYNCHRONIZE
+          value: "true"
+        - name: DATABASE_LOGGING
           value: "true"
         - name: CHOKIDAR_USEPOLLING
           value: "1"
@@ -103,9 +111,9 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /api/v1/health/liveness
+            path: /api/v1/health/readiness
             port: http
-          initialDelaySeconds: 10
+          initialDelaySeconds: 15
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 5
@@ -113,10 +121,10 @@ spec:
           httpGet:
             path: /api/v1/health/liveness
             port: http
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 20
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001

@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wal-service-migration
+  namespace: wal-service-dev
+  labels:
+    app: wal-service-migration
+    version: v1
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: wal-service-migration
+        version: v1
+    spec:
+      restartPolicy: Never
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ['sh', '-c']
+        args:
+        - |
+          until pg_isready -h postgres -p 5432 -U postgres; do
+            echo "Waiting for PostgreSQL to be ready..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+      containers:
+      - name: migration
+        image: wal-service:dev
+        command: ['npm', 'run', 'migration:run']
+        env:
+        - name: DATABASE_HOST
+          value: "postgres"
+        - name: DATABASE_PORT
+          value: "5432"
+        - name: DATABASE_USERNAME
+          value: "postgres"
+        - name: DATABASE_PASSWORD
+          value: "password"
+        - name: DATABASE_NAME
+          value: "wal_service"
+        - name: DATABASE_SYNCHRONIZE
+          value: "false"
+        - name: DATABASE_LOGGING
+          value: "true"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"

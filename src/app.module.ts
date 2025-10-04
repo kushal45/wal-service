@@ -1,4 +1,4 @@
-import { Module, Logger, DynamicModule } from '@nestjs/common';
+import { Module, DynamicModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TerminusModule } from '@nestjs/terminus';
@@ -17,12 +17,6 @@ import configuration from './config/configuration';
 @Module({})
 export class AppModule {
   static register(): DynamicModule {
-    const logger = new Logger('AppModule');
-    const skipDb = process.env.SKIP_DB === 'true';
-    if (skipDb) {
-      logger.warn('SKIP_DB enabled: Database initialization will be skipped.');
-    }
-
     const imports: DynamicModule['imports'] = [
       ConfigModule.forRoot({
         isGlobal: true,
@@ -42,38 +36,30 @@ export class AppModule {
       }),
       TerminusModule,
       ScheduleModule.forRoot(),
+      // TypeORM (PostgreSQL) configuration
+      TypeOrmModule.forRootAsync({
+        imports: [ConfigModule],
+        useFactory: (configService: ConfigService) => ({
+          type: 'postgres',
+          host: configService.get<string>('database.host'),
+          port: configService.get<number>('database.port'),
+          username: configService.get<string>('database.username'),
+          password: configService.get<string>('database.password'),
+          database: configService.get<string>('database.database'),
+          entities: [__dirname + '/**/*.entity{.ts,.js}'],
+          migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
+          synchronize: configService.get<boolean>('database.synchronize'),
+          logging: configService.get<boolean>('database.logging'),
+          ssl: configService.get('database.ssl'),
+          autoLoadEntities: true,
+        }),
+        inject: [ConfigService],
+      }),
       WalModule,
       NamespaceModule.forRoot(),
       ProducersModule.forRoot({ isGlobal: true }),
       MonitoringModule.forRoot(),
     ];
-
-    if (!skipDb) {
-  void imports.splice(
-        1,
-        0,
-        TypeOrmModule.forRootAsync({
-          imports: [ConfigModule],
-          useFactory: (configService: ConfigService) => ({
-            type: 'postgres',
-            host: configService.get('database.host'),
-            port: configService.get('database.port'),
-            username: configService.get('database.username'),
-            password: configService.get('database.password'),
-            database: configService.get('database.database'),
-            entities: [__dirname + '/**/*.entity{.ts,.js}'],
-            migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
-            synchronize: configService.get('database.synchronize'),
-            logging: configService.get('database.logging'),
-            ssl: configService.get('database.ssl'),
-            autoLoadEntities: true,
-          }),
-          inject: [ConfigService],
-        }),
-      );
-    } else {
-      logger.warn('TypeORM module not loaded (SKIP_DB=true).');
-    }
 
     return {
       module: AppModule,
