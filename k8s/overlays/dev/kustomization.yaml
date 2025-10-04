@@ -1,0 +1,53 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: wal-service-dev
+
+namespace: wal-service-dev
+
+resources:
+- ../../base
+- ../../base/kafka.yaml
+- ../../base/localstack.yaml
+- ingress.yaml
+
+commonLabels:
+  environment: development
+  app.kubernetes.io/instance: dev
+
+patches:
+- target:
+    kind: Deployment
+    name: wal-service
+    labelSelector: "app.kubernetes.io/component=api"
+  path: deployment-patch.yaml
+- target:
+    kind: Service
+    name: wal-service
+  path: service-patch.yaml
+- target:
+    kind: Service
+    name: wal-service-headless
+  path: service-patch.yaml
+- target:
+    kind: HorizontalPodAutoscaler
+    name: wal-service-hpa
+  path: hpa-patch.yaml
+- target:
+    kind: ConfigMap
+    name: wal-service-config
+  path: configmap-patch.yaml
+- target:
+    kind: PodDisruptionBudget
+    name: wal-service-pdb
+  path: pdb-patch.yaml
+
+images:
+- name: wal-service
+  newName: localhost:6000/wal-service
+  newTag: latest
+
+replicas:
+- name: wal-service
+  count: 1

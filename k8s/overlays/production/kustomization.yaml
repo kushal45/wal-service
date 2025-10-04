@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: wal-service-production
+
+namespace: wal-service
+
+resources:
+- ../../base
+
+namePrefix: prod-
+
+commonLabels:
+  environment: production
+  app.kubernetes.io/instance: production
+
+patchesStrategicMerge:
+- deployment-patch.yaml
+- hpa-patch.yaml
+- ingress-patch.yaml
+
+images:
+- name: wal-service
+  newTag: v1.0.0
+
+replicas:
+- name: wal-service
+  count: 5

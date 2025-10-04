@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wal-service-config
+data:
+  NODE_ENV: "development"
+  LOG_LEVEL: "debug"
+  DATABASE_LOGGING: "true"
+  PROMETHEUS_ENABLED: "false"
+  # Disable problematic services for MVP
+  KAFKA_BROKERS: "localhost:9092"
+  AWS_ENDPOINT: "http://localhost:4566"

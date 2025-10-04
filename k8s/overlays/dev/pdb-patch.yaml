@@ -1,0 +1,6 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: wal-service-pdb
+spec:
+  minAvailable: 0  # Allow all pods to be disrupted in dev

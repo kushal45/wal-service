@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wal-service
+  namespace: wal-service
+  labels:
+    app.kubernetes.io/name: wal-service
+    app.kubernetes.io/component: rbac
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: wal-service-role
+  namespace: wal-service
+  labels:
+    app.kubernetes.io/name: wal-service
+    app.kubernetes.io/component: rbac
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: wal-service-rolebinding
+  namespace: wal-service
+  labels:
+    app.kubernetes.io/name: wal-service
+    app.kubernetes.io/component: rbac
+subjects:
+- kind: ServiceAccount
+  name: wal-service
+  namespace: wal-service
+roleRef:
+  kind: Role
+  name: wal-service-role
+  apiGroup: rbac.authorization.k8s.io

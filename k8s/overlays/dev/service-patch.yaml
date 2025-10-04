@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wal-service
+  labels:
+    app.kubernetes.io/name: wal-service
+    app.kubernetes.io/component: api
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  - name: debug
+    port: 9229
+    targetPort: debug
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wal-service-headless
+  labels:
+    app.kubernetes.io/name: wal-service
+    app.kubernetes.io/component: api
+spec:
+  ports:
+  - name: http
+    port: 3000
+    targetPort: http
+    protocol: TCP
+  - name: debug
+    port: 9229
+    targetPort: debug
+    protocol: TCP

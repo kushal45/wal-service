@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wal-service
+  labels:
+    app.kubernetes.io/component: api
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: wal-service
+        # Use development image target
+        env:
+        - name: NODE_ENV
+          value: "development"
+        - name: DEBUG
+          value: "*"
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        - name: debug
+          containerPort: 9229
+          protocol: TCP
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        # Extend startup probe for development (slower startup with debug)
+        startupProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 15
+        # Adjust liveness probe for development
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+        # Adjust readiness probe for development
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5

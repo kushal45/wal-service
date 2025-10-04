@@ -1,0 +1,100 @@
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: wal-service-dev
+
+# Build configuration
+build:
+  local:
+    push: false
+    useBuildkit: true
+  tagPolicy:
+    envTemplate:
+      template: "latest"
+  artifacts:
+  - image: kind-registry:5000/wal-service
+    docker:
+      dockerfile: Dockerfile
+      target: development
+      buildArgs:
+        NODE_ENV: development
+    hooks:
+      after:
+        - command: ["sh", "-c", "scripts/load-image-digest.sh"]
+    sync:
+      manual:
+      - src: "src/**/*.ts"
+        dest: /app/src
+      - src: "src/**/*.js"
+        dest: /app/src
+      - src: "package*.json"
+        dest: /app
+      - src: "tsconfig*.json"
+        dest: /app
+      - src: "nest-cli.json"
+        dest: /app
+
+# Deploy configuration using kubectl
+deploy:
+  kubectl: {}
+
+# Manifests to deploy
+manifests:
+  rawYaml:
+  - k8s/overlays/dev-minimal/namespace.yaml
+  - k8s/overlays/dev-minimal/deployment.yaml
+  - k8s/overlays/dev-minimal/service.yaml
+  - k8s/overlays/dev-minimal/postgres.yaml
+
+# Port forwarding for local development
+portForward:
+  - resourceType: service
+    resourceName: wal-service
+    namespace: wal-service-dev
+    port: 3000
+    localPort: 3000
+  - resourceType: service
+    resourceName: postgres
+    namespace: wal-service-dev
+    port: 5432
+    localPort: 5432
+  - resourceType: service
+    resourceName: redis
+    namespace: wal-service-dev
+    port: 6379
+    localPort: 6379
+
+# Development-specific profiles
+profiles:
+  # Debug profile only adds debug port forward & DEBUG env; inherits base build/tagPolicy
+  - name: debug
+    build:
+      artifacts:
+      - image: wal-service:dev
+        custom:
+          buildCommand: ./scripts/skaffold-build.sh
+        sync:
+          manual:
+          - src: "src/**/*.ts"
+            dest: /app/src
+          - src: "src/**/*.js"
+            dest: /app/src
+    portForward:
+    - resourceType: service
+      resourceName: wal-service
+      namespace: wal-service-dev
+      port: 3000
+      localPort: 3000
+    - resourceType: service
+      resourceName: wal-service
+      namespace: wal-service-dev
+      port: 9229
+      localPort: 9229
+  # Manual profile: assumes you have already built & kind-loaded wal-service:dev externally.
+  # Use when diagnosing Skaffold build-tag mutations or to replicate the proven manual flow.
+  - name: manual
+    build:
+      # Intentionally no artifacts; combine with --skip-build for fastest cycle after manual build
+      local: { push: false }
+    deploy:
+      kubectl: {}

@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wal-service-ingress
+spec:
+  tls:
+  - hosts:
+    - api.yourcompany.com
+    - wal-service.yourcompany.com
+    secretName: wal-service-prod-tls
+  rules:
+  - host: api.yourcompany.com
+    http:
+      paths:
+      - path: /api/v1(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: wal-service
+            port:
+              number: 80
+      - path: /health(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: wal-service
+            port:
+              number: 80
+  - host: wal-service.yourcompany.com
+    http:
+      paths:
+      - path: /api/v1(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: wal-service
+            port:
+              number: 80
+      - path: /metrics(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: wal-service
+            port:
+              number: 80
+      - path: /health(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: wal-service
+            port:
+              number: 80
