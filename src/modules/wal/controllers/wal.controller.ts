@@ -25,7 +25,7 @@ import {
 import { ThrottlerGuard } from '@nestjs/throttler';
 
 // Note: These will need to be implemented
-// import { WalService } from '../services/wal.service';
+import { WalService } from '../services/wal.service';
 import { WriteToLogDto } from '../dto/write-to-log.dto';
 import { WriteToLogResponseDto } from '../dto/write-to-log-response.dto';
 
@@ -43,14 +43,15 @@ import { RequestIdInterceptor } from '../../../common/interceptors/request-id.in
 export class WalController {
   private readonly logger = new Logger(WalController.name);
 
-  // constructor(private readonly walService: WalService) {}
+  constructor(private readonly walService: WalService) {}
 
   @Post('write')
   @HttpCode(HttpStatus.ACCEPTED)
   @UsePipes(new ValidationPipe({ transform: true }))
   @ApiOperation({
     summary: 'Write message to WAL',
-    description: 'Submits a message for processing through the Write-Ahead Log system',
+    description:
+      'Submits a message for processing through the Write-Ahead Log system',
   })
   @ApiResponse({
     status: 202,
@@ -87,26 +88,22 @@ export class WalController {
       { requestId, namespace: writeToLogDto.namespace },
     );
 
-    // TODO: Implement actual WAL service call
-    // return this.walService.writeToLog(writeToLogDto, {
-    //   requestId,
-    //   apiKey,
-    //   timestamp: new Date(),
-    // });
-
-    // Placeholder response
-    return {
-      durable: 'unknown' as any,
-      messageId: `wal_${Date.now()}_placeholder`,
-      message: 'Message accepted for processing (placeholder)',
+    // Create request context with metadata
+    const context = {
+      requestId,
+      apiKey,
       timestamp: new Date(),
     };
+
+    // Call WAL service with DTO and context
+    return this.walService.writeToLog(writeToLogDto, context);
   }
 
   @Get('namespace/:namespace/status')
   @ApiOperation({
     summary: 'Get namespace status',
-    description: 'Retrieves the current status and health of a specific namespace',
+    description:
+      'Retrieves the current status and health of a specific namespace',
   })
   @ApiParam({
     name: 'namespace',

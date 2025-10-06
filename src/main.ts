@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -41,6 +42,8 @@ async function bootstrap() {
     new RequestIdInterceptor(),
     new LoggingInterceptor(),
   );
+  // Register the global exception filter
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // Swagger documentation
   if (configService.get('NODE_ENV') !== 'production') {

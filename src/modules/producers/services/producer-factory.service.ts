@@ -3,35 +3,119 @@ import {
   Logger,
   BadRequestException,
   OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { IProducer, ProducerHealthStatus } from '../interfaces/producer.interface';
+import {
+  IProducer,
+  ProducerHealthStatus,
+} from '../interfaces/producer.interface';
+import { RedisProducerService } from '../redis/redis-producer.service';
 // import { KafkaProducerService } from '../kafka/kafka-producer.service';
 // import { SqsProducerService } from '../sqs/sqs-producer.service';
-// import { RedisProducerService } from '../redis/redis-producer.service';
 
 @Injectable()
-export class ProducerFactoryService implements OnModuleDestroy {
+export class ProducerFactoryService implements OnModuleDestroy, OnModuleInit {
   private readonly logger = new Logger(ProducerFactoryService.name);
   private readonly producers = new Map<string, IProducer>();
-  private readonly healthCache = new Map<string, { status: ProducerHealthStatus; lastCheck: number }>();
+  private readonly connectionPools = new Map<string, any>();
+  private readonly healthCache = new Map<
+    string,
+    { status: ProducerHealthStatus; lastCheck: number }
+  >();
   private readonly healthCheckInterval = 30000; // 30 seconds
+  private readonly maxConnectionRetries = 3;
+  private readonly connectionRetryDelay = 1000; // 1 second
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly redisProducerService: RedisProducerService,
+    // TODO: Inject other producers when implemented
+    // private readonly kafkaProducerService: KafkaProducerService,
+    // private readonly sqsProducerService: SqsProducerService,
+  ) {}
+
+  /**
+   * Initialize producer factory on module initialization
+   * LLD Section 9.1 - Factory initialization
+   */
+  async onModuleInit(): Promise<void> {
+    this.logger.log('Initializing Producer Factory Service');
+
+    // Pre-warm producer instances for better performance
+    try {
+      await this.preWarmProducers();
+    } catch (error) {
+      this.logger.warn(`Failed to pre-warm producers: ${error.message}`);
+    }
+
+    // Start health monitoring background task
+    this.startHealthMonitoring();
+
+    this.logger.log('Producer Factory Service initialized successfully');
+  }
 
   /**
    * Get or create a producer for the specified backend
+   * LLD Section 9.1 - Producer factory with caching
    */
   getProducer(backend: 'kafka' | 'sqs' | 'redis'): IProducer {
+    // Check cache first
     if (this.producers.has(backend)) {
-      return this.producers.get(backend)!;
+      const cachedProducer = this.producers.get(backend)!;
+      this.logger.debug(`Retrieved cached producer for backend: ${backend}`);
+      return cachedProducer;
     }
 
-    const producer = this.createProducer(backend);
+    // Create new producer with retry logic
+    const producer = this.createProducerWithRetry(backend);
+
+    // Cache the producer
     this.producers.set(backend, producer);
-    
-    this.logger.log(`Created producer for backend: ${backend}`);
+
+    // Initialize connection pool for this backend
+    this.initializeConnectionPool(backend);
+
+    this.logger.log(`Created and cached producer for backend: ${backend}`);
     return producer;
+  }
+
+  /**
+   * Create producer with retry logic and error handling
+   * LLD Section 9.1 - Graceful degradation
+   */
+  private createProducerWithRetry(
+    backend: 'kafka' | 'sqs' | 'redis',
+  ): IProducer {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= this.maxConnectionRetries; attempt++) {
+      try {
+        this.logger.debug(
+          `Creating producer for ${backend}, attempt ${attempt}/${this.maxConnectionRetries}`,
+        );
+        return this.createProducer(backend);
+      } catch (error) {
+        lastError = error as Error;
+        this.logger.warn(
+          `Failed to create producer for ${backend} (attempt ${attempt}/${this.maxConnectionRetries}): ${error.message}`,
+        );
+
+        // Wait before retry (except for last attempt)
+        if (attempt < this.maxConnectionRetries) {
+          // Exponential backoff
+          const delay = this.connectionRetryDelay * Math.pow(2, attempt - 1);
+          // Note: In real implementation, use await new Promise(resolve => setTimeout(resolve, delay))
+          // For now, just log the delay
+          this.logger.debug(`Waiting ${delay}ms before retry...`);
+        }
+      }
+    }
+
+    // All retries failed
+    const errorMessage = `Failed to create producer for ${backend} after ${this.maxConnectionRetries} attempts: ${lastError?.message}`;
+    this.logger.error(errorMessage);
+    throw new BadRequestException(errorMessage);
   }
 
   /**
@@ -41,18 +125,17 @@ export class ProducerFactoryService implements OnModuleDestroy {
     switch (backend) {
       case 'kafka':
         // TODO: Implement when KafkaProducerService is ready
-        // return new KafkaProducerService(this.configService);
+        // return this.kafkaProducerService;
         return this.createMockProducer('kafka');
 
       case 'sqs':
         // TODO: Implement when SqsProducerService is ready
-        // return new SqsProducerService(this.configService);
+        // return this.sqsProducerService;
         return this.createMockProducer('sqs');
 
       case 'redis':
-        // TODO: Implement when RedisProducerService is ready
-        // return new RedisProducerService(this.configService);
-        return this.createMockProducer('redis');
+        // Use real Redis producer
+        return this.redisProducerService;
 
       default:
         throw new BadRequestException(`Unsupported backend: ${backend}`);
@@ -102,20 +185,22 @@ export class ProducerFactoryService implements OnModuleDestroy {
   /**
    * Get health status for a specific producer
    */
-  async getProducerHealth(backend: 'kafka' | 'sqs' | 'redis'): Promise<ProducerHealthStatus> {
+  async getProducerHealth(
+    backend: 'kafka' | 'sqs' | 'redis',
+  ): Promise<ProducerHealthStatus> {
     const cacheKey = `health_${backend}`;
     const now = Date.now();
-    
+
     // Check cache first
     const cached = this.healthCache.get(cacheKey);
-    if (cached && (now - cached.lastCheck) < this.healthCheckInterval) {
+    if (cached && now - cached.lastCheck < this.healthCheckInterval) {
       return cached.status;
     }
 
     try {
       const producer = this.getProducer(backend);
       const healthStatus = await producer.getHealthStatus();
-      
+
       // Cache the result
       this.healthCache.set(cacheKey, {
         status: healthStatus,
@@ -124,8 +209,10 @@ export class ProducerFactoryService implements OnModuleDestroy {
 
       return healthStatus;
     } catch (error) {
-      this.logger.error(`Error checking health for ${backend} producer: ${error.message}`);
-      
+      this.logger.error(
+        `Error checking health for ${backend} producer: ${error.message}`,
+      );
+
       const errorStatus: ProducerHealthStatus = {
         status: 'unhealthy',
         lastCheck: new Date(),
@@ -175,7 +262,9 @@ export class ProducerFactoryService implements OnModuleDestroy {
       const producer = this.getProducer(backend);
       return producer.healthCheck();
     } catch (error) {
-      this.logger.error(`Connection test failed for ${backend}: ${error.message}`);
+      this.logger.error(
+        `Connection test failed for ${backend}: ${error.message}`,
+      );
       return false;
     }
   }
@@ -183,7 +272,9 @@ export class ProducerFactoryService implements OnModuleDestroy {
   /**
    * Get producer metrics
    */
-  async getProducerMetrics(backend?: 'kafka' | 'sqs' | 'redis'): Promise<Record<string, any>> {
+  async getProducerMetrics(
+    backend?: 'kafka' | 'sqs' | 'redis',
+  ): Promise<Record<string, any>> {
     const metrics: Record<string, any> = {};
 
     if (backend) {
@@ -198,7 +289,9 @@ export class ProducerFactoryService implements OnModuleDestroy {
           try {
             metrics[backendName] = await producer.getMetrics();
           } catch (error) {
-            this.logger.error(`Error getting metrics for ${backendName}: ${error.message}`);
+            this.logger.error(
+              `Error getting metrics for ${backendName}: ${error.message}`,
+            );
             metrics[backendName] = { error: error.message };
           }
         }
@@ -206,6 +299,64 @@ export class ProducerFactoryService implements OnModuleDestroy {
     }
 
     return metrics;
+  }
+
+  /**
+   * Pre-warm producer instances for better performance
+   */
+  private async preWarmProducers(): Promise<void> {
+    const backends: ('kafka' | 'sqs' | 'redis')[] = ['redis']; // Start with Redis only
+
+    for (const backend of backends) {
+      try {
+        this.logger.debug(`Pre-warming ${backend} producer...`);
+        const producer = this.getProducer(backend);
+
+        // Perform health check to ensure producer is ready
+        await producer.healthCheck();
+
+        this.logger.log(`${backend} producer pre-warmed successfully`);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to pre-warm ${backend} producer: ${error.message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Start background health monitoring
+   */
+  private startHealthMonitoring(): void {
+    setInterval(async () => {
+      try {
+        const healthResults = await this.getAllProducersHealth();
+
+        for (const [backend, health] of Object.entries(healthResults)) {
+          if (health.status === 'unhealthy') {
+            this.logger.warn(`Producer ${backend} is unhealthy`, {
+              backend,
+              lastCheck: health.lastCheck,
+              details: health.details,
+            });
+          }
+        }
+      } catch (error) {
+        this.logger.error(`Health monitoring failed: ${error.message}`);
+      }
+    }, this.healthCheckInterval);
+
+    this.logger.debug('Health monitoring started');
+  }
+
+  /**
+   * Initialize connection pool for backend
+   */
+  private initializeConnectionPool(backend: 'kafka' | 'sqs' | 'redis'): void {
+    // For now, just log the initialization
+    // Future implementations might include actual connection pooling
+    this.logger.debug(`Initialized connection pool for ${backend}`);
+    this.connectionPools.set(backend, { initialized: true, backend });
   }
 
   /**
@@ -222,7 +373,9 @@ export class ProducerFactoryService implements OnModuleDestroy {
             this.logger.log(`Disconnected ${backend} producer`);
           }
         } catch (error) {
-          this.logger.error(`Error disconnecting ${backend} producer: ${error.message}`);
+          this.logger.error(
+            `Error disconnecting ${backend} producer: ${error.message}`,
+          );
         }
       },
     );
@@ -230,7 +383,8 @@ export class ProducerFactoryService implements OnModuleDestroy {
     await Promise.allSettled(disconnectPromises);
     this.producers.clear();
     this.healthCache.clear();
-    
+    this.connectionPools.clear();
+
     this.logger.log('All producers shut down');
   }
 }

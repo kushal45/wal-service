@@ -1,0 +1,223 @@
+# Development network for service communication
+networks:
+  wal-dev-network:
+    driver: bridge
+    name: wal-dev-network
+
+services:
+  # Development PostgreSQL
+  postgres-dev:
+    image: postgres:15
+    container_name: wal-postgres-dev
+    environment:
+      POSTGRES_DB: wal_service_db
+      POSTGRES_USER: wal_user
+      POSTGRES_PASSWORD: wal_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      # Optional: Add init scripts
+      # - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - wal-dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wal_user -d wal_service_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Development Redis
+  redis-dev:
+    image: redis:7.2-alpine
+    container_name: wal-redis-dev
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --auto-aof-rewrite-percentage 100
+      --auto-aof-rewrite-min-size 64mb
+    volumes:
+      - redis_dev_data:/data
+      # Optional: Add custom redis.conf
+      # - ./config/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - wal-dev-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # Development Zookeeper (Corrected)
+  zookeeper-dev:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: wal-zookeeper-dev
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 2
+      ZOOKEEPER_INIT_LIMIT: 5
+      ZOOKEEPER_MAX_CLIENT_CNXNS: 60
+      ZOOKEEPER_AUTOPURGE_SNAP_RETAIN_COUNT: 3
+      ZOOKEEPER_AUTOPURGE_PURGE_INTERVAL: 24
+    volumes:
+      - zookeeper_dev_data:/var/lib/zookeeper/data
+      - zookeeper_dev_logs:/var/lib/zookeeper/log
+    networks:
+      - wal-dev-network
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo 'srvr' | nc localhost 2181 | grep -q 'Mode'"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # Development Kafka (single node)
+  kafka-dev:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: wal-kafka-dev
+    ports:
+      - "9092:9092"
+      - "9101:9101"  # JMX port for monitoring
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-dev:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka-dev:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: 'true'
+    volumes:
+      - kafka_dev_data:/var/lib/kafka/data
+    networks:
+      - wal-dev-network
+    depends_on:
+      zookeeper-dev:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # WAL Service for local development with hot reload and debugging
+  wal-service-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: wal-service-dev
+    ports:
+      - "3000:3000"    # Application port
+      - "9229:9229"    # Node.js debug port
+    environment:
+      # Node.js debugging configuration
+      NODE_ENV: development
+      NODE_OPTIONS: "--max-old-space-size=4096"
+      
+      # Database configuration
+      DATABASE_HOST: postgres-dev
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: wal_user
+      DATABASE_PASSWORD: wal_password
+      DATABASE_NAME: wal_service_db
+      DATABASE_SYNCHRONIZE: "true"
+      DATABASE_LOGGING: "true"
+      
+      # Redis configuration
+      REDIS_HOST: redis-dev
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      
+      # Kafka configuration
+      KAFKA_BROKERS: kafka-dev:29092
+      KAFKA_CLIENT_ID: wal-service-dev
+      
+      # Application configuration
+      APP_PORT: 3000
+      APP_HOST: 0.0.0.0
+      LOG_LEVEL: debug
+      DEBUG: "wal-service:*"
+      
+      # Development flags
+      DEVELOPMENT_MODE: "true"
+      HOT_RELOAD: "true"
+    volumes:
+      # Source code for hot reload (bind mounts for better performance on macOS)
+      - ./src:/app/src:cached
+      - ./test:/app/test:cached
+      
+      # Configuration files (read-only, except package-lock.json which npm may modify)
+      - ./package.json:/app/package.json:ro
+      - ./package-lock.json:/app/package-lock.json:cached
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./nest-cli.json:/app/nest-cli.json:ro
+      - ./tsconfig.build.json:/app/tsconfig.build.json:ro
+      
+      # Development logs and data
+      - ./logs:/app/logs:delegated
+      
+      # Node modules cache for faster rebuilds
+      - node_modules_cache:/app/node_modules
+    networks:
+      - wal-dev-network
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+      redis-dev:
+        condition: service_healthy
+      kafka-dev:
+        condition: service_healthy
+    # Ensure clean install and debug mode
+    command: [
+      "sh", "-c", 
+      "npm install && npx nest start --debug=0.0.0.0:9229 --watch"
+    ]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  postgres_dev_data:
+    driver: local
+    name: wal_postgres_dev_data
+  redis_dev_data:
+    driver: local
+    name: wal_redis_dev_data
+  zookeeper_dev_data:
+    driver: local
+    name: wal_zookeeper_dev_data
+  zookeeper_dev_logs:
+    driver: local
+    name: wal_zookeeper_dev_logs
+  kafka_dev_data:
+    driver: local
+    name: wal_kafka_dev_data
+  node_modules_cache:
+    driver: local
+    name: wal_node_modules_cache

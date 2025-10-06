@@ -14,10 +14,13 @@ export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger(LoggingInterceptor.name);
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest();
-    const response = context.switchToHttp().getResponse();
-    const { method, url, headers, body } = request;
-    const requestId = request.requestId;
+    const request = context.switchToHttp().getRequest?.() || {};
+    const response = context.switchToHttp().getResponse?.() || {};
+    const method = request.method || '';
+    const url = request.url || '';
+    const headers = request.headers || {};
+    const body = request.body || {};
+    const requestId = request.requestId || '';
     const startTime = Date.now();
 
     // Log incoming request
@@ -25,8 +28,8 @@ export class LoggingInterceptor implements NestInterceptor {
       requestId,
       method,
       url,
-      userAgent: headers['user-agent'],
-      contentType: headers['content-type'],
+      userAgent: headers['user-agent'] || '',
+      contentType: headers['content-type'] || '',
       bodySize: JSON.stringify(body || {}).length,
     });
 

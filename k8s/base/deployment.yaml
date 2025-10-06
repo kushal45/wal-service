@@ -35,9 +35,73 @@ spec:
         runAsUser: 1001
         runAsGroup: 1001
         fsGroup: 1001
+      initContainers:
+      # Wait for PostgreSQL to be ready
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Waiting for PostgreSQL to be ready..."
+          until pg_isready -h postgres-service -p 5432 -U wal_user; do
+            echo "PostgreSQL is not ready yet. Waiting 5 seconds..."
+            sleep 5
+          done
+          echo "PostgreSQL is ready!"
+        env:
+        - name: PGPASSWORD
+          value: "wal_password"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      # Run database migration and seeding
+      - name: database-migration
+        image: kind-registry:5000/wal-service
+        imagePullPolicy: IfNotPresent
+        command: ['/bin/sh', '-c']
+        args:
+        - |
+          echo "Starting database migration and seeding..."
+          echo "Running migrations..."
+          npm run migration:run
+          echo "Migrations completed successfully!"
+          
+          echo "Running database seeding..."
+          npm run db:seed
+          echo "Database seeding completed successfully!"
+          
+          echo "Database initialization complete - application can start!"
+        envFrom:
+        - configMapRef:
+            name: wal-service-config
+        - secretRef:
+            name: wal-service-secrets
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
       containers:
       - name: wal-service
-        image: localhost:6000/wal-service
+        image: kind-registry:5000/wal-service
         imagePullPolicy: IfNotPresent
         ports:
         - name: http

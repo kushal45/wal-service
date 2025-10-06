@@ -15,8 +15,11 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should return augmented hello string with hot reload suffix', () => {
+      const result = appController.getHello();
+      expect(result).toBe('Hello World! - Hot reload test v3');
+      // Guard that the base service string is still present
+      expect(result.startsWith('Hello World!')).toBe(true);
     });
   });
 });

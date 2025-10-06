@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TerminusModule } from '@nestjs/terminus';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 
 import { WalModule } from './modules/wal/wal.module';
 import { NamespaceModule } from './modules/namespace/namespace.module';
@@ -54,6 +55,11 @@ export class AppModule {
           autoLoadEntities: true,
         }),
         inject: [ConfigService],
+      }),
+      PrometheusModule.register({
+        defaultMetrics: {
+          enabled: true,
+        },
       }),
       WalModule,
       NamespaceModule.forRoot(),

@@ -5,7 +5,7 @@ export class WriteToLogResponseDto {
   @ApiProperty({
     description: 'Durability status of the message',
     enum: DurabilityStatus,
-    example: DurabilityStatus.TRUE,
+    example: DurabilityStatus.PERSISTED,
   })
   durable: DurabilityStatus;
 
@@ -44,4 +44,16 @@ export class WriteToLogResponseDto {
     example: 15,
   })
   queuePosition?: number;
+
+  @ApiPropertyOptional({
+    description: 'Additional metadata about the request processing',
+    example: {
+      requestId: 'req_1696291200000_abc123',
+      namespace: 'user-cache-replication',
+      durabilityStatus: 'persisted',
+      hasDelay: false,
+      processingMode: 'immediate'
+    },
+  })
+  metadata?: Record<string, any>;
 }
