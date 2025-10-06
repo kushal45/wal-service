@@ -3,6 +3,7 @@ import { MessageStatus } from '../enums/message-status.enum';
 export interface EnrichedMessage {
   messageId: string;
   namespace: string;
+  apiKey: string;
   payload: Record<string, any>;
   target: any; // Will be properly typed with TargetConfigDto
   lifecycle?: {
@@ -17,7 +18,6 @@ export interface EnrichedMessage {
   metadata?: Record<string, string>;
   priority?: number;
   tags?: string[];
-  
   // Enriched fields
   timestamp: Date;
   requestId: string;

@@ -2,49 +2,78 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: wal-service-migration
-  namespace: wal-service-dev
   labels:
-    app: wal-service-migration
-    version: v1
+    app.kubernetes.io/name: wal-service
+    app.kubernetes.io/component: migration
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
-  ttlSecondsAfterFinished: 600
+  # Allow the job to run multiple times (useful for development)
+  completions: 1
+  parallelism: 1
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300  # Clean up after 5 minutes
   template:
     metadata:
       labels:
-        app: wal-service-migration
-        version: v1
+        app.kubernetes.io/name: wal-service
+        app.kubernetes.io/component: migration
     spec:
       restartPolicy: Never
+      serviceAccountName: wal-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
       initContainers:
+      # Wait for PostgreSQL to be ready before running migrations
       - name: wait-for-postgres
         image: postgres:15-alpine
         command: ['sh', '-c']
         args:
         - |
-          until pg_isready -h postgres -p 5432 -U postgres; do
-            echo "Waiting for PostgreSQL to be ready..."
-            sleep 2
+          echo "Waiting for PostgreSQL to be ready..."
+          until pg_isready -h postgres-service -p 5432 -U wal_user; do
+            echo "PostgreSQL is not ready yet. Waiting 5 seconds..."
+            sleep 5
           done
           echo "PostgreSQL is ready!"
+        env:
+        - name: PGPASSWORD
+          value: "wal_password"
       containers:
       - name: migration
-        image: wal-service:dev
-        command: ['npm', 'run', 'migration:run']
+        image: localhost:6000/wal-service
+        imagePullPolicy: IfNotPresent
+        command: ['/bin/sh', '-c']
+        args:
+        - |
+          echo "Starting database migration and seeding..."
+          echo "Running migrations..."
+          npm run migration:run
+          echo "Migrations completed successfully!"
+          
+          echo "Running database seeding..."
+          npm run db:seed
+          echo "Database seeding completed successfully!"
+          
+          echo "Database initialization complete!"
+        envFrom:
+        - configMapRef:
+            name: wal-service-config
+        - secretRef:
+            name: wal-service-secrets
         env:
-        - name: DATABASE_HOST
-          value: "postgres"
-        - name: DATABASE_PORT
-          value: "5432"
-        - name: DATABASE_USERNAME
-          value: "postgres"
-        - name: DATABASE_PASSWORD
-          value: "password"
-        - name: DATABASE_NAME
-          value: "wal_service"
-        - name: DATABASE_SYNCHRONIZE
-          value: "false"
-        - name: DATABASE_LOGGING
-          value: "true"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         resources:
           requests:
             memory: "256Mi"
@@ -52,3 +81,20 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "200m"
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300

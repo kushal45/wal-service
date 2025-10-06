@@ -1,9 +1,11 @@
 import { DataSource } from 'typeorm';
 import { Namespace } from '../../modules/namespace/entities/namespace.entity';
+import { TargetType } from '../../modules/wal/dto/target-config.dto';
 
 export async function seedNamespaces(dataSource: DataSource): Promise<void> {
   const namespaceRepository = dataSource.getRepository(Namespace);
 
+  const now = new Date();
   const namespaces = [
     {
       name: 'user-cache-replication',
@@ -12,30 +14,136 @@ export async function seedNamespaces(dataSource: DataSource): Promise<void> {
       backend: 'kafka' as const,
       topicName: 'user-cache-replication-topic',
       retryPolicy: {
-        maxAttempts: 3,
-        backoffStrategy: 'exponential' as const,
+        maxAttempts: 5,
+        backoffStrategy: 'exponential',
         backoffMultiplier: 2,
-        maxDelay: 60000, // 1 minute
-      },
+        maxDelay: 120000, // 2 minutes
+      } as const,
       shardConfig: {
-        strategy: 'hash' as const,
-        partitionCount: 3,
-      },
+        strategy: 'hash',
+        partitionCount: 6,
+        customLogic: null,
+      } as const,
       targetConfig: {
-        type: 'cache',
+        type: TargetType.CACHE,
         config: {
           regions: ['us-east-1', 'eu-west-1', 'ap-southeast-1'],
           operation: 'SET',
+          cacheType: 'redis',
         },
       },
       rateLimitConfig: {
         enabled: true,
-        requestsPerSecond: 1000,
-        burstLimit: 1500,
+        requestsPerSecond: 2000,
+        burstLimit: 3000,
+      },
+      maxMessageSize: 2097152, // 2MB
+      maxDelaySeconds: 43200, // 12 hours
+      metadata: {
+        owner: 'team-data-platform',
+        tags: ['replication', 'cache', 'critical'],
+        environment: process.env.NODE_ENV || 'development',
+      },
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'seed-script',
+      updatedBy: 'seed-script',
+      schemaRules: {
+        requiredFields: ['name', 'topicName', 'backend'],
+        maxLength: {
+          name: 100,
+          topicName: 200,
+        },
+        allowedBackends: ['kafka', 'sqs', 'redis'],
+      },
+    },
+    {
+      name: 'transaction-logging',
+      description: 'Centralized transaction log for audit and compliance',
+      enabled: true,
+      backend: 'sqs' as const,
+      topicName: 'transaction-log-topic',
+      retryPolicy: {
+        maxAttempts: 10,
+        backoffStrategy: 'linear',
+        backoffMultiplier: 1,
+        maxDelay: 300000, // 5 minutes
+      } as const,
+      shardConfig: {
+        strategy: 'round_robin',
+        partitionCount: 4,
+      } as const,
+      targetConfig: {
+        type: TargetType.DATABASE,
+        config: {
+          table: 'transactions',
+          region: 'us-east-1',
+        },
+      },
+      rateLimitConfig: {
+        enabled: false,
+        requestsPerSecond: 0,
+        burstLimit: 0,
       },
       maxMessageSize: 1048576, // 1MB
       maxDelaySeconds: 86400, // 24 hours
-      createdBy: 'system',
+      metadata: {
+        owner: 'team-compliance',
+        tags: ['audit', 'logging'],
+        environment: process.env.NODE_ENV || 'development',
+      },
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'seed-script',
+      updatedBy: 'seed-script',
+      schemaRules: {
+        requiredFields: ['name', 'topicName', 'backend'],
+        allowedBackends: ['kafka', 'sqs', 'redis'],
+      },
+    },
+    {
+      name: 'notification-events',
+      description: 'Event-driven notifications for user actions',
+      enabled: true,
+      backend: 'redis' as const,
+      topicName: 'notification-events-topic',
+      retryPolicy: {
+        maxAttempts: 3,
+        backoffStrategy: 'constant',
+        backoffMultiplier: 1,
+        maxDelay: 60000, // 1 minute
+      } as const,
+      shardConfig: {
+        strategy: 'random',
+        partitionCount: 2,
+      } as const,
+      targetConfig: {
+        type: TargetType.HTTP_SERVICE,
+        config: {
+          endpoint: 'https://api.example.com/notify',
+          method: 'POST',
+        },
+      },
+      rateLimitConfig: {
+        enabled: true,
+        requestsPerSecond: 500,
+        burstLimit: 700,
+      },
+      maxMessageSize: 524288, // 512KB
+      maxDelaySeconds: 3600, // 1 hour
+      metadata: {
+        owner: 'team-notifications',
+        tags: ['notifications', 'events'],
+        environment: process.env.NODE_ENV || 'development',
+      },
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'seed-script',
+      updatedBy: 'seed-script',
+      schemaRules: {
+        requiredFields: ['name', 'topicName', 'backend'],
+        allowedBackends: ['kafka', 'sqs', 'redis'],
+      },
     },
     {
       name: 'bulk-delete',
@@ -45,16 +153,16 @@ export async function seedNamespaces(dataSource: DataSource): Promise<void> {
       topicName: 'bulk-delete-queue',
       retryPolicy: {
         maxAttempts: 5,
-        backoffStrategy: 'exponential' as const,
+        backoffStrategy: 'exponential',
         backoffMultiplier: 1.5,
         maxDelay: 300000, // 5 minutes
-      },
+      } as const,
       shardConfig: {
-        strategy: 'round_robin' as const,
+        strategy: 'round_robin',
         partitionCount: 2,
-      },
+      } as const,
       targetConfig: {
-        type: 'database',
+        type: TargetType.DATABASE,
         config: {
           operation: 'DELETE',
           batchSize: 100,
@@ -67,7 +175,19 @@ export async function seedNamespaces(dataSource: DataSource): Promise<void> {
       },
       maxMessageSize: 524288, // 512KB
       maxDelaySeconds: 86400, // 24 hours
-      createdBy: 'system',
+      metadata: {
+        owner: 'team-ops',
+        tags: ['bulk', 'delete', 'maintenance'],
+        environment: process.env.NODE_ENV || 'development',
+      },
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'seed-script',
+      updatedBy: 'seed-script',
+      schemaRules: {
+        requiredFields: ['name', 'topicName', 'backend'],
+        allowedBackends: ['kafka', 'sqs', 'redis'],
+      },
     },
     {
       name: 'multi-partition-transaction',
@@ -77,19 +197,19 @@ export async function seedNamespaces(dataSource: DataSource): Promise<void> {
       topicName: 'multi-partition-transaction-topic',
       retryPolicy: {
         maxAttempts: 3,
-        backoffStrategy: 'linear' as const,
+        backoffStrategy: 'linear',
         backoffMultiplier: 1,
         maxDelay: 30000, // 30 seconds
-      },
+      } as const,
       shardConfig: {
-        strategy: 'custom' as const,
+        strategy: 'custom',
         partitionCount: 6,
         customLogic: {
           extractKey: 'payload.partitionKey',
         },
-      },
+      } as const,
       targetConfig: {
-        type: 'database',
+        type: TargetType.DATABASE,
         config: {
           transactional: true,
           partitions: ['A', 'B', 'C'],
@@ -102,7 +222,19 @@ export async function seedNamespaces(dataSource: DataSource): Promise<void> {
       },
       maxMessageSize: 2097152, // 2MB
       maxDelaySeconds: 3600, // 1 hour
-      createdBy: 'system',
+      metadata: {
+        owner: 'team-transactions',
+        tags: ['multi-partition', 'transaction'],
+        environment: process.env.NODE_ENV || 'development',
+      },
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'seed-script',
+      updatedBy: 'seed-script',
+      schemaRules: {
+        requiredFields: ['name', 'topicName', 'backend'],
+        allowedBackends: ['kafka', 'sqs', 'redis'],
+      },
     },
     {
       name: 'webhook-notifications',
@@ -112,16 +244,16 @@ export async function seedNamespaces(dataSource: DataSource): Promise<void> {
       topicName: 'webhook-notifications-stream',
       retryPolicy: {
         maxAttempts: 2,
-        backoffStrategy: 'constant' as const,
+        backoffStrategy: 'constant',
         backoffMultiplier: 1,
         maxDelay: 10000, // 10 seconds
-      },
+      } as const,
       shardConfig: {
-        strategy: 'hash' as const,
+        strategy: 'hash',
         partitionCount: 1,
-      },
+      } as const,
       targetConfig: {
-        type: 'http',
+        type: TargetType.HTTP_SERVICE,
         config: {
           method: 'POST',
           timeout: 5000,
@@ -135,7 +267,19 @@ export async function seedNamespaces(dataSource: DataSource): Promise<void> {
       },
       maxMessageSize: 262144, // 256KB
       maxDelaySeconds: 1800, // 30 minutes
-      createdBy: 'system',
+      metadata: {
+        owner: 'team-notifications',
+        tags: ['webhook', 'notifications'],
+        environment: process.env.NODE_ENV || 'development',
+      },
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'seed-script',
+      updatedBy: 'seed-script',
+      schemaRules: {
+        requiredFields: ['name', 'topicName', 'backend'],
+        allowedBackends: ['kafka', 'sqs', 'redis'],
+      },
     },
   ];
 
@@ -160,9 +304,9 @@ async function main(): Promise<void> {
     type: 'postgres',
     host: process.env.DATABASE_HOST || 'localhost',
     port: parseInt(process.env.DATABASE_PORT || '5432', 10),
-    username: process.env.DATABASE_USERNAME || 'postgres',
-    password: process.env.DATABASE_PASSWORD || 'password',
-    database: process.env.DATABASE_NAME || 'wal_service',
+    username: process.env.DATABASE_USERNAME || 'wal_user',
+    password: process.env.DATABASE_PASSWORD || 'wal_password',
+    database: process.env.DATABASE_NAME || 'wal_service_db',
     entities: [Namespace],
     synchronize: false,
     logging: true,

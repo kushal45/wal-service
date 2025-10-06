@@ -26,10 +26,36 @@ cluster-status: ## Show cluster status
 	@echo "📊 Checking cluster status..."
 	./scripts/setup-local-k8s.sh kind status
 
+##@ Local Development (Recommended for debugging)
+local-dev: ## Start local development with Docker Compose (hot reload + debugging)
+	@echo "🚀 Starting local development environment..."
+	./scripts/dev-local.sh start
+
+local-stop: ## Stop local development environment
+	@echo "🛑 Stopping local development environment..."
+	./scripts/dev-local.sh stop
+
+local-clean: ## Clean local development environment (removes data)
+	@echo "🧹 Cleaning local development environment..."
+	./scripts/dev-local.sh clean
+
+local-logs: ## Show local development logs
+	@echo "📝 Showing local development logs..."
+	./scripts/dev-local.sh logs
+
+local-shell: ## Open shell in local WAL service container
+	@echo "🐚 Opening shell in local container..."
+	./scripts/dev-local.sh shell
+
+local-migrate: ## Run migrations in local environment
+	@echo "📦 Running local migrations..."
+	./scripts/dev-local.sh migrate
+
 ##@ Skaffold Development
 dev-start: ## Start development with Skaffold (hot reload)
 	@echo "🔥 Starting development with hot reload..."
-	@export PATH="/opt/homebrew/bin:/usr/local/bin:$$PATH" && skaffold dev --port-forward
+	@export PATH="/opt/homebrew/bin:/usr/local/bin:$$PATH" && skaffold dev --port-forward --auto-build --auto-deploy --trigger=polling
+
 
 dev-run: ## Run development build once
 	@echo "🏃 Running development build..."
@@ -115,7 +141,11 @@ prod-rollback: ## Rollback production deployment
 ##@ Database Operations
 db-migrate: ## Run database migrations (development)
 	@echo "📦 Running database migrations..."
-	./scripts/db-migrate.sh dev migrate
+	@echo "� Restarting WAL service deployment to trigger migration initContainer..."
+	export PATH="/opt/homebrew/bin:/usr/local/bin:$$PATH" && kubectl rollout restart deployment wal-service -n wal-service-dev
+	@echo "⏳ Waiting for deployment to be ready..."
+	export PATH="/opt/homebrew/bin:/usr/local/bin:$$PATH" && kubectl rollout status deployment wal-service -n wal-service-dev --timeout=300s
+	@echo "✅ Database migrations completed and application is ready!"
 
 db-migrate-prod: ## Run database migrations (production)
 	@echo "📦 Running database migrations (production)..."
@@ -127,11 +157,12 @@ db-rollback: ## Rollback database migration (development)
 
 db-seed: ## Seed database with sample data (development)
 	@echo "🌱 Seeding database..."
-	./scripts/db-migrate.sh dev seed
+	@echo "ℹ️  Seeding is now included in db-migrate command"
 
 db-reset: ## Reset database (development only)
 	@echo "🗑️ Resetting database..."
-	./scripts/db-migrate.sh dev reset
+	@echo "⚠️  To reset database, delete the postgres PVC and restart deployment"
+	@echo "   kubectl delete pvc postgres-pvc -n wal-service-dev"
 
 db-status: ## Check database migration status
 	@echo "📊 Checking database migration status..."

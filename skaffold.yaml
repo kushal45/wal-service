@@ -8,6 +8,7 @@ build:
   local:
     push: false
     useBuildkit: true
+    concurrency: 1
   tagPolicy:
     envTemplate:
       template: "latest"
@@ -18,33 +19,25 @@ build:
       target: development
       buildArgs:
         NODE_ENV: development
-    hooks:
-      after:
-        - command: ["sh", "-c", "scripts/load-image-digest.sh"]
     sync:
       manual:
       - src: "src/**/*.ts"
         dest: /app/src
+        strip: "src"
       - src: "src/**/*.js"
         dest: /app/src
-      - src: "package*.json"
-        dest: /app
-      - src: "tsconfig*.json"
-        dest: /app
-      - src: "nest-cli.json"
-        dest: /app
+        strip: "src"
+      - src: "src/**/*.json"
+        dest: /app/src
+        strip: "src"
 
-# Deploy configuration using kubectl
+# Deploy configuration using kubectl with Kustomize
 deploy:
   kubectl: {}
-
-# Manifests to deploy
 manifests:
-  rawYaml:
-  - k8s/overlays/dev-minimal/namespace.yaml
-  - k8s/overlays/dev-minimal/deployment.yaml
-  - k8s/overlays/dev-minimal/service.yaml
-  - k8s/overlays/dev-minimal/postgres.yaml
+  kustomize:
+    paths:
+      - k8s/overlays/dev-minimal
 
 # Port forwarding for local development
 portForward:
@@ -54,7 +47,7 @@ portForward:
     port: 3000
     localPort: 3000
   - resourceType: service
-    resourceName: postgres
+    resourceName: postgres-service
     namespace: wal-service-dev
     port: 5432
     localPort: 5432

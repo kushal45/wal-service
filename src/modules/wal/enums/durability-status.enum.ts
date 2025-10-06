@@ -1,5 +1,6 @@
 export enum DurabilityStatus {
-  TRUE = 'true',
-  FALSE = 'false',
-  UNKNOWN = 'unknown',
+  PERSISTED = 'persisted',
+  ACKNOWLEDGED = 'acknowledged',
+  SCHEDULED = 'scheduled',
+  FAILED = 'failed',
 }

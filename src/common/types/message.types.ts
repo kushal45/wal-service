@@ -13,10 +13,12 @@ export interface MessageHeaders {
 
 export interface ProducerResult {
   messageId: string;
+  success?: boolean;
   partition?: number;
   offset?: string;
   timestamp?: Date;
   durable: boolean;
+  metadata?: Record<string, any>;
 }
 
 export interface ConsumerMessage {

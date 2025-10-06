@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: wal-service-dev
-  labels:
-    name: wal-service-dev
-    app.kubernetes.io/name: wal-service
-    app.kubernetes.io/component: namespace

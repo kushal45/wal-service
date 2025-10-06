@@ -1,3 +1,4 @@
+import { TargetType } from '../../../modules/wal/dto/target-config.dto';
 import {
   Entity,
   PrimaryColumn,
@@ -42,7 +43,7 @@ export class Namespace {
 
   @Column({ type: 'jsonb', nullable: true })
   targetConfig: {
-    type: string;
+    type: TargetType;
     config: Record<string, any>;
   };
 
@@ -73,4 +74,7 @@ export class Namespace {
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   updatedBy: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  schemaRules: Record<string, any>;
 }
