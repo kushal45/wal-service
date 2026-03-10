@@ -32,7 +32,7 @@
     "db:seed": "ts-node src/database/seeds/namespace-seeds.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-sqs": "^3.901.0",
+    "@aws-sdk/client-sqs": "^3.987.0",
     "@nestjs/bull": "^11.0.3",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
